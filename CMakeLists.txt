@@ -6,6 +6,7 @@ project(${TARGET} VERSION ${${TARGET}_VERSION} LANGUAGES CXX)
 
 
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+option(BUILD_VULKAN_LIBS "Build Vulkan libs from source" OFF)
 
 option(GLM_DISABLE_SIMD "Disable SIMD instructions usage in GLM" ON)
 option(GLM_FORCE_INLINE "Force GLM functions inlining" OFF)
@@ -68,9 +69,6 @@ endif()
 set(SPDLOG_NO_ATOMIC_LEVELS ON CACHE BOOL "" FORCE)
 set(SPDLOG_DISABLE_DEFAULT_LOGGER ON CACHE BOOL "" FORCE)
 
-set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
-set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
-
 
 include(FetchContent)
 
@@ -106,54 +104,6 @@ FetchContent_Declare(glfw
 FetchContent_MakeAvailable(glfw)
 
 
-FetchContent_Declare(vulkan-headers
-  GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers
-  GIT_TAG        v1.3.276
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(vulkan-headers)
-
-
-FetchContent_Declare(vulkan-loader
-  GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Loader
-  GIT_TAG        v1.3.276
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(vulkan-loader)
-
-
-FetchContent_Declare(vulkan-utility-libraries
-  GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Utility-Libraries
-  GIT_TAG        v1.3.276
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(vulkan-utility-libraries)
-
-
-FetchContent_Declare(vulkan-validation-layers
-  GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-ValidationLayers
-  GIT_TAG        v1.3.276
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(vulkan-validation-layers)
-
-
-FetchContent_Declare(spirv-headers
-  GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
-  GIT_TAG        vulkan-sdk-1.3.275.0
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(spirv-headers)
-
-
-FetchContent_Declare(spirv-tools
-  GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools
-  GIT_TAG        vulkan-sdk-1.3.275.0
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(spirv-tools)
-
-
 FetchContent_Declare(glm
   GIT_REPOSITORY https://github.com/g-truc/glm
   GIT_TAG        1.0.0
@@ -168,6 +118,60 @@ FetchContent_Declare(assimp
   GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(assimp)
+
+
+if(${BUILD_VULKAN_LIBS})
+
+  set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
+  set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
+
+  FetchContent_Declare(vulkan-headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers
+    GIT_TAG        v1.3.276
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(vulkan-headers)
+
+
+  FetchContent_Declare(vulkan-loader
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Loader
+    GIT_TAG        v1.3.276
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(vulkan-loader)
+
+
+  FetchContent_Declare(vulkan-utility-libraries
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Utility-Libraries
+    GIT_TAG        v1.3.276
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(vulkan-utility-libraries)
+
+
+  FetchContent_Declare(vulkan-validation-layers
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-ValidationLayers
+    GIT_TAG        v1.3.276
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(vulkan-validation-layers)
+
+
+  FetchContent_Declare(spirv-headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
+    GIT_TAG        vulkan-sdk-1.3.275.0
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(spirv-headers)
+
+
+  FetchContent_Declare(spirv-tools
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools
+    GIT_TAG        vulkan-sdk-1.3.275.0
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(spirv-tools)
+endif()
 
 
 target_compile_definitions(glm PUBLIC
@@ -209,12 +213,27 @@ target_compile_definitions(glfw INTERFACE
 
 find_package(Threads REQUIRED)
 
+if(${BUILD_VULKAN_LIBS})
+  target_link_libraries(${TARGET} PUBLIC
+    Vulkan::Headers
+    Vulkan::Loader
+    Vulkan::LayerSettings
+    Vulkan::UtilityHeaders
+    VkLayer_utils
+  )
+else()
+  find_package(Vulkan REQUIRED)
+  find_package(VulkanLoader REQUIRED)
+  find_package(VulkanUtilityLibraries REQUIRED)
+
+  target_link_libraries(${TARGET} PUBLIC
+    Vulkan::Vulkan
+    Vulkan::Headers
+    Vulkan::Loader
+  )
+endif()
+
 target_link_libraries(${TARGET} PUBLIC
-  Vulkan::Headers
-  Vulkan::Loader
-  Vulkan::LayerSettings
-  Vulkan::UtilityHeaders
-  VkLayer_utils
   Threads::Threads
   glfw
   ctpl::ctpl
@@ -228,10 +247,6 @@ include(GNUInstallDirs)
 
 if(CMAKE_BUILD_TYPE MATCHES "Release")
 
-  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-#    target_compile_options(${TARGET} PUBLIC -O2)
-  endif()
-
   set_target_properties(${TARGET} PROPERTIES
     WIN32_EXECUTABLE TRUE
   )
@@ -239,8 +254,7 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
 else()
 
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-#    target_compile_options(${TARGET} PUBLIC -Og)
-    target_compile_options(${TARGET} PUBLIC -O0)
+    target_compile_options(${TARGET} PUBLIC -Og)
   endif()
 
   set_target_properties(${TARGET} PROPERTIES
@@ -252,7 +266,10 @@ if(NOT ${BUILD_SHARED_LIBS})
   target_link_libraries(${TARGET} PUBLIC -static)
 
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_link_libraries(${TARGET} PRIVATE -static-libgcc -static-libstdc++)
+    target_link_libraries(${TARGET} PRIVATE
+      -static-libgcc
+      -static-libstdc++
+    )
   endif()
 endif()
 
