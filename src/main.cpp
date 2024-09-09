@@ -40,6 +40,62 @@ DestroyDebugUtilsMessengerEXT(
     func(instance, debugMessenger, pAllocator);
 }
 
+static VKAPI_ATTR VkBool32 VKAPI_CALL
+debugCallback(
+  VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+  VkDebugUtilsMessageTypeFlagsEXT messageType,
+  const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+  void* pUserData )
+{
+  spdlog::level::level_enum logLevel {};
+
+  std::string message {};
+
+  switch (messageType)
+  {
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
+      message = "[Vk-General]: {}";
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
+      message = "[Vk-Validation]: {}";
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
+      message = "[Vk-Performance]: {}";
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
+      message = "[Vk-AddressBinding]: {}";
+      break;
+  }
+
+  switch (messageSeverity)
+  {
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+      LOG_TRACE(message, pCallbackData->pMessage);
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+      LOG_INFO(message, pCallbackData->pMessage);
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+      LOG_WARN(message, pCallbackData->pMessage);
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+      LOG_ERROR(message, pCallbackData->pMessage);
+      break;
+
+    default:
+      break;
+  }
+
+  return VK_FALSE;
+}
+
+
 static std::vector <VkPhysicalDevice>
 EnumerateSupportedDevices(
   const VkInstance instance )
@@ -107,61 +163,6 @@ private:
 
   } mQueues {};
 };
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-debugCallback(
-  VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-  VkDebugUtilsMessageTypeFlagsEXT messageType,
-  const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-  void* pUserData )
-{
-  spdlog::level::level_enum logLevel {};
-
-  std::string message {};
-
-  switch (messageType)
-  {
-    case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
-      message = "[Vk-General]: {}";
-      break;
-
-    case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
-      message = "[Vk-Validation]: {}";
-      break;
-
-    case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
-      message = "[Vk-Performance]: {}";
-      break;
-
-    case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
-      message = "[Vk-AddressBinding]: {}";
-      break;
-  }
-
-  switch (messageSeverity)
-  {
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-      LOG_TRACE(message, pCallbackData->pMessage);
-      break;
-
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-      LOG_INFO(message, pCallbackData->pMessage);
-      break;
-
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-      LOG_WARN(message, pCallbackData->pMessage);
-      break;
-
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-      LOG_ERROR(message, pCallbackData->pMessage);
-      break;
-
-    default:
-      break;
-  }
-
-  return VK_FALSE;
-}
 
 void
 VulkanApp::run()
