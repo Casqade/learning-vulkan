@@ -4,7 +4,12 @@
 #include <vulkan/vulkan.hpp>
 
 
-VkResult
+const std::vector <const char*> validationLayers
+{
+  "VK_LAYER_KHRONOS_validation",
+};
+
+static VkResult
 CreateDebugUtilsMessengerEXT(
   VkInstance instance,
   const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
@@ -22,7 +27,7 @@ CreateDebugUtilsMessengerEXT(
   return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-void
+static void
 DestroyDebugUtilsMessengerEXT(
   VkInstance instance,
   VkDebugUtilsMessengerEXT debugMessenger,
@@ -34,6 +39,32 @@ DestroyDebugUtilsMessengerEXT(
   if ( func != nullptr )
     func(instance, debugMessenger, pAllocator);
 }
+
+static std::vector <VkPhysicalDevice>
+EnumerateSupportedDevices(
+  const VkInstance instance )
+{
+  VkPhysicalDevice device = VK_NULL_HANDLE;
+
+  std::uint32_t deviceCount {};
+  vkEnumeratePhysicalDevices(
+    instance, &deviceCount, nullptr );
+
+  std::vector <VkPhysicalDevice> devices(deviceCount);
+
+  vkEnumeratePhysicalDevices(
+    instance, &deviceCount, devices.data() );
+
+  return devices;
+}
+
+struct QueueFamilyCapabilities
+{
+  bool supportsGraphics {};
+  bool supportsPresentation {};
+
+  QueueFamilyCapabilities() = default;
+};
 
 
 class VulkanApp
@@ -53,13 +84,28 @@ private:
   void initVulkan();
   void initVulkanDebugMessenger( const VkDebugUtilsMessengerCreateInfoEXT& );
 
+  void createLogicalDevice( const VkPhysicalDevice );
+  bool isPhysicalDeviceSuitable( const VkPhysicalDevice );
+
+  std::vector <QueueFamilyCapabilities> queryQueueFamilyCapabilities( const VkPhysicalDevice );
+
   void loop();
 
 
   GLFWwindow* mWindow {};
   VkInstance mVkInstance {};
+  VkDevice mDevice {};
+  VkSurfaceKHR mSurface {};
+  VkQueue mPresentationQueue {};
 
   VkDebugUtilsMessengerEXT mVkDebugMessenger {};
+
+  struct
+  {
+    VkQueue graphics {};
+    VkQueue presentation {};
+
+  } mQueues {};
 };
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -155,42 +201,6 @@ VulkanApp::initWindow()
   }
 }
 
-std::vector <VkPhysicalDevice>
-enumerateSupportedDevices(
-  const VkInstance instance )
-{
-  VkPhysicalDevice device = VK_NULL_HANDLE;
-
-  std::uint32_t deviceCount {};
-  vkEnumeratePhysicalDevices(
-    instance, &deviceCount, nullptr );
-
-  std::vector <VkPhysicalDevice> devices(deviceCount);
-
-  vkEnumeratePhysicalDevices(
-    instance, &deviceCount, devices.data() );
-
-  return devices;
-}
-
-bool
-isDeviceSuitable(
-  const VkPhysicalDevice device )
-{
-  VkPhysicalDeviceProperties properties;
-  VkPhysicalDeviceFeatures features;
-
-  vkGetPhysicalDeviceProperties(
-    device, &properties );
-
-  vkGetPhysicalDeviceFeatures(
-    device, &features );
-
-  return
-    properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-    features.geometryShader == true;
-}
-
 void
 VulkanApp::initVulkan()
 {
@@ -234,11 +244,6 @@ VulkanApp::initVulkan()
     for ( const auto& extension : availableExtensions )
       LOG_INFO("  {}", extension.extensionName);
   }
-
-  std::vector <const char*> validationLayers
-  {
-    "VK_LAYER_KHRONOS_validation",
-  };
 
   {
     uint32_t layerCount {};
@@ -286,7 +291,7 @@ VulkanApp::initVulkan()
     .ppEnabledExtensionNames = enabledExtensions.data(),
   };
 
-  const auto result = vkCreateInstance(
+  auto result = vkCreateInstance(
     &createInfo, nullptr, &mVkInstance );
 
   if ( result != VK_SUCCESS )
@@ -295,9 +300,26 @@ VulkanApp::initVulkan()
     throw std::runtime_error("Vulkan: Failed to create instance");
   }
 
+  initVulkanDebugMessenger(debugCreateInfo);
+
+
+  result = glfwCreateWindowSurface(
+    mVkInstance,
+    mWindow,
+    NULL,
+    &mSurface );
+
+  if ( result != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to create window surface");
+  }
+
+
   VkPhysicalDevice suitableDevice = VK_NULL_HANDLE;
 
-  const auto devices = enumerateSupportedDevices(mVkInstance);
+  const auto devices =
+    EnumerateSupportedDevices(mVkInstance);
 
   if ( devices.size() == 0 )
   {
@@ -306,7 +328,7 @@ VulkanApp::initVulkan()
   }
 
   for ( const auto& device : devices )
-    if ( isDeviceSuitable(device) == true )
+    if ( isPhysicalDeviceSuitable(device) == true )
     {
       suitableDevice = device;
       break;
@@ -317,23 +339,6 @@ VulkanApp::initVulkan()
     deinit();
     throw std::runtime_error("Vulkan: No suitable Vulkan devices available");
   }
-
-  return;
-
-  VkSurfaceKHR surface;
-  VkResult err = glfwCreateWindowSurface(
-    mVkInstance,
-    mWindow,
-    NULL,
-    &surface );
-
-  if ( err != VK_SUCCESS )
-  {
-    deinit();
-    throw std::runtime_error("Vulkan: Failed to create window surface");
-  }
-
-  initVulkanDebugMessenger(debugCreateInfo);
 }
 
 void
@@ -354,18 +359,179 @@ VulkanApp::initVulkanDebugMessenger(
 void
 VulkanApp::deinit()
 {
+  mQueues = {};
+
+  if ( mDevice != nullptr )
+  {
+    vkDestroyDevice(mDevice, nullptr);
+    mDevice = {};
+  }
+
   if ( mVkInstance != nullptr )
   {
+    vkDestroySurfaceKHR(
+      mVkInstance, mSurface, nullptr );
+
     DestroyDebugUtilsMessengerEXT(
       mVkInstance,
       mVkDebugMessenger,
       nullptr );
 
     vkDestroyInstance(mVkInstance, nullptr);
+    mVkInstance = {};
+    mVkDebugMessenger = {};
   }
 
   glfwDestroyWindow(mWindow);
   glfwTerminate();
+
+  mWindow = {};
+}
+
+void
+VulkanApp::createLogicalDevice(
+  const VkPhysicalDevice physicalDevice )
+{
+  const auto queueFamilyCapabilities =
+    queryQueueFamilyCapabilities(physicalDevice);
+
+  size_t graphicsQueueFamilyIndex {};
+  size_t presentationQueueFamilyIndex {};
+
+  for ( size_t i {}; i < queueFamilyCapabilities.size(); ++i )
+    if ( queueFamilyCapabilities[i].supportsGraphics == true )
+    {
+      graphicsQueueFamilyIndex = i;
+      break;
+    }
+
+  for ( size_t i {}; i < queueFamilyCapabilities.size(); ++i )
+    if ( queueFamilyCapabilities[i].supportsPresentation == true )
+    {
+      presentationQueueFamilyIndex = i;
+      break;
+    }
+
+
+  float queuePriority = 1.f;
+
+  VkDeviceQueueCreateInfo queueCreateInfo {};
+  queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  queueCreateInfo.queueCount = 1;
+  queueCreateInfo.pQueuePriorities = &queuePriority;
+
+  std::vector <VkDeviceQueueCreateInfo> queueCreateInfos(
+    2, queueCreateInfo );
+
+  queueCreateInfos[0].queueFamilyIndex = graphicsQueueFamilyIndex;
+  queueCreateInfos[1].queueFamilyIndex = presentationQueueFamilyIndex;
+
+
+  VkPhysicalDeviceFeatures deviceFeatures {};
+
+  VkDeviceCreateInfo deviceCreateInfo {};
+  deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
+  deviceCreateInfo.queueCreateInfoCount = queueCreateInfos.size();
+
+  deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
+  deviceCreateInfo.enabledExtensionCount = 0;
+
+  deviceCreateInfo.enabledLayerCount = validationLayers.size();
+  deviceCreateInfo.ppEnabledLayerNames = validationLayers.data();
+
+  const auto result = vkCreateDevice(
+    physicalDevice, &deviceCreateInfo,
+    nullptr, &mDevice );
+
+  if ( result != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to create logical device");
+  }
+
+  vkGetDeviceQueue(
+    mDevice,
+    graphicsQueueFamilyIndex, 0,
+    &mQueues.graphics );
+
+  vkGetDeviceQueue(
+    mDevice,
+    presentationQueueFamilyIndex, 0,
+    &mQueues.presentation );
+}
+
+std::vector <QueueFamilyCapabilities>
+VulkanApp::queryQueueFamilyCapabilities(
+  const VkPhysicalDevice device )
+{
+  std::uint32_t queueFamilyCount {};
+
+  vkGetPhysicalDeviceQueueFamilyProperties(
+    device, &queueFamilyCount, nullptr );
+
+  std::vector <VkQueueFamilyProperties> queueFamilies(
+    queueFamilyCount );
+
+  vkGetPhysicalDeviceQueueFamilyProperties(
+    device, &queueFamilyCount,
+    queueFamilies.data() );
+
+  std::vector <QueueFamilyCapabilities> queueFamilyCapabilities(
+    queueFamilyCount );
+
+  for ( std::size_t i {}; i < queueFamilies.size(); ++i )
+  {
+    queueFamilyCapabilities[i].supportsGraphics =
+      queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT;
+
+    VkBool32 presentationSupport {};
+    vkGetPhysicalDeviceSurfaceSupportKHR(
+      device, i, mSurface,
+      &presentationSupport );
+
+    queueFamilyCapabilities[i].supportsPresentation =
+      presentationSupport;
+  }
+
+  return queueFamilyCapabilities;
+}
+
+bool
+VulkanApp::isPhysicalDeviceSuitable(
+  const VkPhysicalDevice device )
+{
+  VkPhysicalDeviceProperties properties;
+  vkGetPhysicalDeviceProperties(
+    device, &properties );
+
+  if ( properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU )
+    return false;
+
+
+  VkPhysicalDeviceFeatures features;
+  vkGetPhysicalDeviceFeatures(
+    device, &features );
+
+  if ( features.geometryShader == false )
+    return false;
+
+
+  const auto queueFamilyCapabilities =
+    queryQueueFamilyCapabilities(device);
+
+  bool supportsGraphics {};
+  bool supportsPresentation {};
+
+  for ( size_t i {}; i < queueFamilyCapabilities.size(); ++i )
+  {
+    supportsGraphics |= queueFamilyCapabilities[i].supportsGraphics;
+    supportsPresentation |= queueFamilyCapabilities[i].supportsPresentation;
+  }
+
+  return
+    supportsGraphics == true &&
+    supportsPresentation == true;
 }
 
 void
