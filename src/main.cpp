@@ -1,4 +1,3 @@
-#include <x86intrin.h>
 #include "logger.hpp"
 
 #include <GLFW/glfw3.h>
@@ -375,83 +374,11 @@ VulkanApp::loop()
 }
 
 
-class MyClass
-{
-  int num {};
-
-
-public:
-  MyClass( int newNum )
-  {
-    num = newNum;
-    printf("MyClass()\n");
-  }
-
-  ~MyClass()
-  {
-    printf("~MyClass()\n");
-  }
-
-  int value() const
-  {
-    return num;
-  }
-};
-
-template <typename T>
-struct ListNode
-{
-  ListNode* next {};
-
-  T data {};
-
-
-  template <typename ...Args>
-  void emplace_back( Args&&... args )
-  {
-    auto& last = next;
-
-    while ( last != nullptr )
-      last = next->next;
-
-    last = new ListNode <T> {
-      {}, std::forward <Args> (args)...};
-  }
-
-  void push_back( const T& newData )
-  {
-    auto& last = next;
-
-    while ( last != nullptr )
-      last = next->next;
-
-    last = new ListNode <T> (newData);
-  }
-};
-
-
 int
 main(
   int argc,
   char* argv[] )
 {
-
-  std::uint32_t tscAux {};
-  const auto tickCount = __rdtscp(&tscAux);
-
-  std::printf("rdtsc: %llu, rdtscp: %llu / %u \n", __rdtsc(), tickCount, tscAux);
-
-
-  ListNode <MyClass> item { {}, 1 };
-  ListNode <MyClass> item1 { {}, 2 };
-
-  item.next = &item1;
-
-  item.emplace_back(3);
-
-  auto item3 = *item.next;
-  std::printf("item3 val: %d\n", item3.data.value());
-
   createLogger();
 
   VulkanApp app {};
