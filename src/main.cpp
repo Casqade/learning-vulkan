@@ -4,9 +4,14 @@
 #include <vulkan/vulkan.hpp>
 
 
-const std::vector <const char*> validationLayers
+const std::vector <const char*> ValidationLayers
 {
   "VK_LAYER_KHRONOS_validation",
+};
+
+const std::vector <const char*> RequiredInstanceExtensions
+{
+  VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 };
 
 static VkResult
@@ -216,7 +221,7 @@ VulkanApp::initVulkan()
   };
 
 
-  std::vector <const char*> enabledExtensions {};
+  auto instanceExtensions {RequiredInstanceExtensions};
 
   {
     uint32_t glfwExtensionCount {};
@@ -224,9 +229,7 @@ VulkanApp::initVulkan()
       glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
     for ( size_t i {}; i < glfwExtensionCount; ++i )
-      enabledExtensions.emplace_back(glfwExtensions[i]);
-
-    enabledExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+      instanceExtensions.emplace_back(glfwExtensions[i]);
   }
 
   {
@@ -286,10 +289,10 @@ VulkanApp::initVulkan()
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     .pNext = &debugCreateInfo,
     .pApplicationInfo = &appInfo,
-    .enabledLayerCount = static_cast <uint32_t> (validationLayers.size()),
-    .ppEnabledLayerNames = validationLayers.data(),
-    .enabledExtensionCount = static_cast <uint32_t> (enabledExtensions.size()),
-    .ppEnabledExtensionNames = enabledExtensions.data(),
+    .enabledLayerCount = static_cast <uint32_t> (ValidationLayers.size()),
+    .ppEnabledLayerNames = ValidationLayers.data(),
+    .enabledExtensionCount = static_cast <uint32_t> (instanceExtensions.size()),
+    .ppEnabledExtensionNames = instanceExtensions.data(),
   };
 
   auto result = vkCreateInstance(
@@ -438,8 +441,8 @@ VulkanApp::createLogicalDevice(
   deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
   deviceCreateInfo.enabledExtensionCount = 0;
 
-  deviceCreateInfo.enabledLayerCount = validationLayers.size();
-  deviceCreateInfo.ppEnabledLayerNames = validationLayers.data();
+  deviceCreateInfo.enabledLayerCount = ValidationLayers.size();
+  deviceCreateInfo.ppEnabledLayerNames = ValidationLayers.data();
 
   const auto result = vkCreateDevice(
     physicalDevice, &deviceCreateInfo,
