@@ -14,6 +14,11 @@ const std::vector <const char*> RequiredInstanceExtensions
   VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 };
 
+const std::vector <const char*> RequiredDeviceExtensions
+{
+  VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+};
+
 static VkResult
 CreateDebugUtilsMessengerEXT(
   VkInstance instance,
@@ -502,6 +507,38 @@ VulkanApp::queryQueueFamilyCapabilities(
 }
 
 bool
+AreRequiredExtensionsAvailable(
+  const VkPhysicalDevice device )
+{
+  std::uint32_t extensionCount {};
+  vkEnumerateDeviceExtensionProperties(
+    device, nullptr,
+    &extensionCount, nullptr );
+
+  std::vector <VkExtensionProperties> deviceExtensions(
+    extensionCount );
+
+  vkEnumerateDeviceExtensionProperties(
+    device, nullptr,
+    &extensionCount, deviceExtensions.data() );
+
+  for ( const auto& requiredExtension : RequiredDeviceExtensions )
+  {
+    const auto extensionIter = std::find_if(
+      deviceExtensions.cbegin(), deviceExtensions.cend(),
+      [requiredExtension] ( const VkExtensionProperties& extension )
+      {
+        return std::strcmp(requiredExtension, extension.extensionName) == 0;
+      });
+
+    if ( extensionIter == deviceExtensions.end() )
+      return false;
+  }
+
+  return true;
+}
+
+bool
 VulkanApp::isPhysicalDeviceSuitable(
   const VkPhysicalDevice device )
 {
@@ -535,7 +572,8 @@ VulkanApp::isPhysicalDeviceSuitable(
 
   return
     supportsGraphics == true &&
-    supportsPresentation == true;
+    supportsPresentation == true &&
+    AreRequiredExtensionsAvailable(device) == true;
 }
 
 void
