@@ -19,6 +19,21 @@ const std::vector <const char*> RequiredDeviceExtensions
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
 
+const VkAllocationCallbacks AllocatorCallbacks
+{
+  .pUserData {},
+  .pfnAllocation {},
+  .pfnReallocation {},
+  .pfnFree {},
+  .pfnInternalAllocation {},
+  .pfnInternalFree {},
+};
+
+const decltype(AllocatorCallbacks)* GlobalAllocator =
+//  &AllocatorCallbacks;
+  nullptr;
+
+
 static VkResult
 CreateDebugUtilsMessengerEXT(
   VkInstance instance,
@@ -305,7 +320,7 @@ VulkanApp::initVulkan()
   };
 
   auto result = vkCreateInstance(
-    &createInfo, nullptr, &mVkInstance );
+    &createInfo, GlobalAllocator, &mVkInstance );
 
   if ( result != VK_SUCCESS )
   {
@@ -317,10 +332,8 @@ VulkanApp::initVulkan()
 
 
   result = glfwCreateWindowSurface(
-    mVkInstance,
-    mWindow,
-    NULL,
-    &mSurface );
+    mVkInstance, mWindow,
+    GlobalAllocator, &mSurface );
 
   if ( result != VK_SUCCESS )
   {
@@ -352,17 +365,18 @@ VulkanApp::initVulkan()
     deinit();
     throw std::runtime_error("Vulkan: No suitable Vulkan devices available");
   }
+
+  createLogicalDevice(suitableDevice);
 }
 
 void
 VulkanApp::initVulkanDebugMessenger(
   const VkDebugUtilsMessengerCreateInfoEXT& createInfo )
 {
-  const auto debugMessengerResult = CreateDebugUtilsMessengerEXT(
-    mVkInstance,
-    &createInfo,
-    nullptr,
-    &mVkDebugMessenger );
+  const auto debugMessengerResult =
+    CreateDebugUtilsMessengerEXT(
+      mVkInstance, &createInfo,
+      GlobalAllocator, &mVkDebugMessenger );
 
   if ( debugMessengerResult != VK_SUCCESS )
     throw std::runtime_error("Vulkan: Failed to set up debug messenger");
@@ -376,21 +390,21 @@ VulkanApp::deinit()
 
   if ( mDevice != nullptr )
   {
-    vkDestroyDevice(mDevice, nullptr);
+    vkDestroyDevice(mDevice, GlobalAllocator);
     mDevice = {};
   }
 
   if ( mVkInstance != nullptr )
   {
     vkDestroySurfaceKHR(
-      mVkInstance, mSurface, nullptr );
+      mVkInstance, mSurface, GlobalAllocator );
 
     DestroyDebugUtilsMessengerEXT(
       mVkInstance,
       mVkDebugMessenger,
-      nullptr );
+      GlobalAllocator );
 
-    vkDestroyInstance(mVkInstance, nullptr);
+    vkDestroyInstance(mVkInstance, GlobalAllocator);
     mVkInstance = {};
     mVkDebugMessenger = {};
   }
@@ -459,7 +473,7 @@ VulkanApp::createLogicalDevice(
 
   const auto result = vkCreateDevice(
     physicalDevice, &deviceCreateInfo,
-    nullptr, &mDevice );
+    GlobalAllocator, &mDevice );
 
   if ( result != VK_SUCCESS )
   {
