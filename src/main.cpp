@@ -214,17 +214,6 @@ VulkanApp::initWindow()
 void
 VulkanApp::initVulkan()
 {
-  VkApplicationInfo appInfo
-  {
-    .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-    .pApplicationName = "VulkanApp",
-    .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-    .pEngineName = "VulkanEngine",
-    .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-    .apiVersion = VK_API_VERSION_1_0,
-  };
-
-
   auto instanceExtensions {RequiredInstanceExtensions};
 
   {
@@ -269,17 +258,23 @@ VulkanApp::initVulkan()
       LOG_INFO("  {}", layer.layerName);
   }
 
-  const auto enabledMessageSeverities =
+  const VkDebugUtilsMessageSeverityFlagsEXT enabledMessageSeverities
+  {
     VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+    VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
     VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
+  };
 
-  const auto enabledMessageTypes =
+  const VkDebugUtilsMessageTypeFlagsEXT enabledMessageTypes
+  {
     VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+    VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT
+  };
 
-  VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo
+  const VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo
   {
     .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
     .messageSeverity = enabledMessageSeverities,
@@ -288,7 +283,17 @@ VulkanApp::initVulkan()
     .pUserData = nullptr,
   };
 
-  VkInstanceCreateInfo createInfo
+  const VkApplicationInfo appInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+    .pApplicationName = "VulkanApp",
+    .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+    .pEngineName = "VulkanEngine",
+    .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+    .apiVersion = VK_API_VERSION_1_0,
+  };
+
+  const VkInstanceCreateInfo createInfo
   {
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     .pNext = &debugCreateInfo,
@@ -423,10 +428,12 @@ VulkanApp::createLogicalDevice(
 
   float queuePriority = 1.f;
 
-  VkDeviceQueueCreateInfo queueCreateInfo {};
-  queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-  queueCreateInfo.queueCount = 1;
-  queueCreateInfo.pQueuePriorities = &queuePriority;
+  const VkDeviceQueueCreateInfo queueCreateInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+    .queueCount = 1,
+    .pQueuePriorities = &queuePriority,
+  };
 
   std::vector <VkDeviceQueueCreateInfo> queueCreateInfos(
     1 + graphicsQueueFamilyIndex != presentationQueueFamilyIndex,
@@ -437,18 +444,18 @@ VulkanApp::createLogicalDevice(
   if ( graphicsQueueFamilyIndex != presentationQueueFamilyIndex )
     queueCreateInfos[1].queueFamilyIndex = presentationQueueFamilyIndex;
 
+
   VkPhysicalDeviceFeatures deviceFeatures {};
 
-  VkDeviceCreateInfo deviceCreateInfo {};
-  deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-  deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
-  deviceCreateInfo.queueCreateInfoCount = queueCreateInfos.size();
-
-  deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
-  deviceCreateInfo.enabledExtensionCount = 0;
-
-  deviceCreateInfo.enabledLayerCount = ValidationLayers.size();
-  deviceCreateInfo.ppEnabledLayerNames = ValidationLayers.data();
+  const VkDeviceCreateInfo deviceCreateInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+    .queueCreateInfoCount = static_cast <uint32_t> (queueCreateInfos.size()),
+    .pQueueCreateInfos = queueCreateInfos.data(),
+    .enabledExtensionCount = static_cast <uint32_t> (RequiredDeviceExtensions.size()),
+    .ppEnabledExtensionNames = RequiredDeviceExtensions.data(),
+    .pEnabledFeatures = &deviceFeatures,
+  };
 
   const auto result = vkCreateDevice(
     physicalDevice, &deviceCreateInfo,
