@@ -430,11 +430,13 @@ VulkanApp::createLogicalDevice(
   queueCreateInfo.pQueuePriorities = &queuePriority;
 
   std::vector <VkDeviceQueueCreateInfo> queueCreateInfos(
-    2, queueCreateInfo );
+    1 + graphicsQueueFamilyIndex != presentationQueueFamilyIndex,
+    queueCreateInfo );
 
   queueCreateInfos[0].queueFamilyIndex = graphicsQueueFamilyIndex;
-  queueCreateInfos[1].queueFamilyIndex = presentationQueueFamilyIndex;
 
+  if ( graphicsQueueFamilyIndex != presentationQueueFamilyIndex )
+    queueCreateInfos[1].queueFamilyIndex = presentationQueueFamilyIndex;
 
   VkPhysicalDeviceFeatures deviceFeatures {};
 
