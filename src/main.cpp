@@ -162,7 +162,6 @@ private:
   VkInstance mVkInstance {};
   VkDevice mDevice {};
   VkSurfaceKHR mSurface {};
-  VkQueue mPresentationQueue {};
 
   VkDebugUtilsMessengerEXT mVkDebugMessenger {};
 
