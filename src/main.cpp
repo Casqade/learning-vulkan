@@ -173,6 +173,7 @@ private:
 
   void createLogicalDevice( const VkPhysicalDevice );
   void createSwapChain( const VkPhysicalDevice );
+  void createImageViews();
 
   bool isPhysicalDeviceSuitable( const VkPhysicalDevice ) const;
 
@@ -195,6 +196,7 @@ private:
   struct
   {
     std::vector <VkImage> images {};
+    std::vector <VkImageView> imageViews {};
 
     VkFormat imageFormat {};
     VkExtent2D extent {};
@@ -421,11 +423,15 @@ VulkanApp::deinit()
   mQueues = {};
   mQueueIndices = {};
 
+  for ( auto& imageView : mSwapchain.imageViews )
+    vkDestroyImageView(
+      mDevice, imageView, GlobalAllocator );
+
   if ( mSwapchain.handle != VK_NULL_HANDLE )
     vkDestroySwapchainKHR(
-      mDevice, mSwapchain.handle, GlobalAllocator);
+      mDevice, mSwapchain.handle, GlobalAllocator );
 
-  mSwapchain.handle = VK_NULL_HANDLE;
+  mSwapchain = {};
 
   if ( mDevice != VK_NULL_HANDLE )
   {
@@ -622,6 +628,49 @@ VulkanApp::createSwapChain(
 
   mSwapchain.extent = extent;
   mSwapchain.imageFormat = surfaceFormat.format;
+}
+
+void
+VulkanApp::createImageViews()
+{
+  mSwapchain.imageViews.resize(mSwapchain.images.size());
+
+  for ( size_t i {}; i < mSwapchain.images.size(); ++i )
+  {
+    VkImageViewCreateInfo createInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = mSwapchain.images[i],
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = mSwapchain.imageFormat,
+      .components
+      {
+        .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+      },
+      .subresourceRange
+      {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      },
+    };
+
+    const auto result = vkCreateImageView(
+      mDevice, &createInfo,
+      GlobalAllocator,
+      &mSwapchain.imageViews[i] );
+
+    if ( result != VK_SUCCESS )
+    {
+      deinit();
+      throw std::runtime_error("Vulkan: Failed to create image views");
+    }
+  }
 }
 
 std::vector <QueueFamilyCapabilities>
