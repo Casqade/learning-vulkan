@@ -245,6 +245,10 @@ target_link_libraries(${TARGET} PUBLIC
 
 include(GNUInstallDirs)
 
+set_target_properties(${TARGET} PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}"
+)
+
 if(CMAKE_BUILD_TYPE MATCHES "Release")
 
   set_target_properties(${TARGET} PROPERTIES
@@ -279,3 +283,22 @@ target_include_directories(${TARGET} PUBLIC
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+execute_process(
+  COMMAND glslc triangle.vert -o triangle_vs.spv
+  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/src/shaders")
+
+execute_process(
+  COMMAND glslc triangle.frag -o triangle_fs.spv
+  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/src/shaders")
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src/shaders
+  DESTINATION ${CMAKE_INSTALL_BINDIR}
+  FILES_MATCHING PATTERN "*.spv"
+)
+
+file(
+  COPY src/shaders
+  DESTINATION ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}
+  FILES_MATCHING PATTERN "*.spv"
+)
