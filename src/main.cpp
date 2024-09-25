@@ -199,6 +199,11 @@ private:
   void createImageViews();
   void createRenderPass();
   void createGraphicsPipeline();
+  void createFramebuffers();
+  void createCommandPool( const VkPhysicalDevice );
+  void createCommandBuffer();
+
+  void recordCommandBuffer( VkCommandBuffer, const uint32_t imageIndex );
 
   bool isPhysicalDeviceSuitable( const VkPhysicalDevice ) const;
 
@@ -224,6 +229,7 @@ private:
   {
     std::vector <VkImage> images {};
     std::vector <VkImageView> imageViews {};
+    std::vector <VkFramebuffer> framebuffers {};
 
     VkFormat imageFormat {};
     VkExtent2D extent {};
@@ -235,6 +241,8 @@ private:
   VkRenderPass mRenderPass {};
   VkPipelineLayout mPipelineLayout {};
   VkPipeline mGraphicsPipeline {};
+  VkCommandPool mCommandPool {};
+  VkCommandBuffer mCommandBuffer {};
 
 
   struct
@@ -456,6 +464,23 @@ VulkanApp::deinit()
 {
   mQueues = {};
   mQueueIndices = {};
+  mCommandBuffer = {};
+
+  if ( mCommandPool != VK_NULL_HANDLE )
+  {
+    vkDestroyCommandPool(
+      mDevice, mCommandPool, GlobalAllocator );
+
+    mCommandPool = {};
+  }
+
+  for ( auto& framebuffer : mSwapchain.framebuffers )
+  {
+    vkDestroyFramebuffer(
+      mDevice, framebuffer, GlobalAllocator );
+
+    framebuffer = {};
+  }
 
   if ( mGraphicsPipeline != VK_NULL_HANDLE )
   {
@@ -989,6 +1014,190 @@ VulkanApp::createGraphicsPipeline()
   {
     deinit();
     throw std::runtime_error("Vulkan: Failed to create graphics pipeline");
+  }
+}
+
+void
+VulkanApp::createFramebuffers()
+{
+  mSwapchain.framebuffers.resize(
+    mSwapchain.imageViews.size() );
+
+  for ( size_t i {}; i < mSwapchain.imageViews.size(); ++i )
+  {
+    const VkImageView attachments[]
+    {
+      mSwapchain.imageViews[i],
+    };
+
+    const VkFramebufferCreateInfo framebufferCreateInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+      .renderPass = mRenderPass,
+      .attachmentCount = 1,
+      .pAttachments = attachments,
+      .width = mSwapchain.extent.width,
+      .height = mSwapchain.extent.height,
+      .layers = 1,
+    };
+
+    const auto result = vkCreateFramebuffer(
+      mDevice, &framebufferCreateInfo,
+      GlobalAllocator, &mSwapchain.framebuffers[i] );
+
+    if ( result != VK_SUCCESS )
+    {
+      deinit();
+      throw std::runtime_error("Vulkan: Failed to create framebuffer");
+    }
+  }
+}
+
+void
+VulkanApp::createCommandPool(
+  const VkPhysicalDevice physicalDevice )
+{
+  const auto queueFamilyCapabilities =
+    queryQueueFamilyCapabilities(physicalDevice);
+
+  uint32_t graphicsQueueFamilyIndex {};
+
+  for ( size_t i {}; i < queueFamilyCapabilities.size(); ++i )
+    if ( queueFamilyCapabilities[i].supportsGraphics == true )
+    {
+      graphicsQueueFamilyIndex = i;
+      break;
+    }
+
+  const VkCommandPoolCreateInfo poolCreateInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+    .queueFamilyIndex = graphicsQueueFamilyIndex,
+  };
+
+  const auto result = vkCreateCommandPool(
+    mDevice, &poolCreateInfo,
+    GlobalAllocator, &mCommandPool );
+
+  if ( result != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to create command pool");
+  }
+}
+
+void
+VulkanApp::createCommandBuffer()
+{
+  const VkCommandBufferAllocateInfo cmdBufferAllocateInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    .commandPool = mCommandPool,
+    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+    .commandBufferCount = 1,
+  };
+
+  const auto result = vkAllocateCommandBuffers(
+    mDevice, &cmdBufferAllocateInfo, &mCommandBuffer );
+
+  if ( result != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to allocate command buffer");
+  }
+}
+
+void
+VulkanApp::recordCommandBuffer(
+  VkCommandBuffer cmdBuffer,
+  const uint32_t imageIndex )
+{
+  const VkCommandBufferBeginInfo cmdBufferBeginInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    .flags = 0,
+    .pInheritanceInfo = nullptr,
+  };
+
+  const auto cmdBeginResult = vkBeginCommandBuffer(
+    cmdBuffer, &cmdBufferBeginInfo );
+
+  if ( cmdBeginResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to begin recording command buffer");
+  }
+
+
+  const VkClearValue clearColor = {{{0.f, 0.f, 0.f, 1.f}}};
+
+  const VkRenderPassBeginInfo renderPassBeginInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .renderPass = mRenderPass,
+    .framebuffer = mSwapchain.framebuffers[imageIndex],
+    .renderArea =
+    {
+      .offset = {0, 0},
+      .extent = mSwapchain.extent,
+    },
+    .clearValueCount = 1,
+    .pClearValues = &clearColor,
+  };
+
+  vkCmdBeginRenderPass(
+    mCommandBuffer, &renderPassBeginInfo,
+    VK_SUBPASS_CONTENTS_INLINE );
+
+
+  vkCmdBindPipeline(
+    mCommandBuffer,
+    VK_PIPELINE_BIND_POINT_GRAPHICS,
+    mGraphicsPipeline );
+
+
+  const VkViewport viewport
+  {
+    .x = 0.f,
+    .y = 0.f,
+    .width = static_cast <float> (mSwapchain.extent.width),
+    .height = static_cast <float> (mSwapchain.extent.height),
+    .minDepth = 0.f,
+    .maxDepth = 1.f,
+  };
+
+  vkCmdSetViewport(
+    mCommandBuffer,
+    0, 1, &viewport );
+
+
+  const VkRect2D scissor
+  {
+    .offset = {0, 0},
+    .extent = mSwapchain.extent,
+  };
+
+  vkCmdSetScissor(
+    mCommandBuffer,
+    0, 1, &scissor );
+
+
+  vkCmdDraw(
+    mCommandBuffer,
+    3, 1,
+    0, 0 );
+
+
+  vkCmdEndRenderPass(mCommandBuffer);
+
+
+  const auto cmdEndResult = vkEndCommandBuffer(mCommandBuffer);
+
+  if ( cmdEndResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to record command buffer");
   }
 }
 
