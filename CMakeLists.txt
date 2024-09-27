@@ -16,6 +16,7 @@ add_executable(${TARGET})
 target_sources(${TARGET} PRIVATE
   src/main.cpp
 
+  src/allocator.cpp
   src/logger.cpp
 )
 

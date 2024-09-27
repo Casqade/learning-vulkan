@@ -1,4 +1,5 @@
 #include "logger.hpp"
+#include "allocator.hpp"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
@@ -21,19 +22,8 @@ const std::vector <const char*> RequiredDeviceExtensions
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
 
-const VkAllocationCallbacks AllocatorCallbacks
-{
-  .pUserData {},
-  .pfnAllocation {},
-  .pfnReallocation {},
-  .pfnFree {},
-  .pfnInternalAllocation {},
-  .pfnInternalFree {},
-};
 
-const decltype(AllocatorCallbacks)* GlobalAllocator =
-//  &AllocatorCallbacks;
-  nullptr;
+const VkAllocationCallbacks* GlobalAllocator {};
 
 
 static std::vector <char>
@@ -1447,6 +1437,20 @@ main(
 {
   createLogger();
 
+  cqdeVk::Allocator allocator {};
+
+  const VkAllocationCallbacks AllocatorCallbacks
+  {
+    .pUserData = &allocator,
+    .pfnAllocation = cqdeVk::allocate,
+    .pfnReallocation = cqdeVk::reallocate,
+    .pfnFree = cqdeVk::free,
+    .pfnInternalAllocation = cqdeVk::internalAllocate,
+    .pfnInternalFree = cqdeVk::internalFree,
+  };
+
+  GlobalAllocator = &AllocatorCallbacks;
+
   VulkanApp app {};
 
   try
@@ -1459,6 +1463,7 @@ main(
     return EXIT_FAILURE;
   }
 
+  allocator.printMemoryUsage();
 
   return EXIT_SUCCESS;
 }
