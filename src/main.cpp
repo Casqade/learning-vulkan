@@ -193,7 +193,7 @@ private:
   void createGraphicsPipeline();
   void createFramebuffers();
   void createCommandPool( const VkPhysicalDevice );
-  void createCommandBuffer();
+  void createCommandBuffers();
   void createSyncObjects();
 
   void recordCommandBuffer( VkCommandBuffer, const uint32_t imageIndex );
@@ -229,7 +229,7 @@ private:
 
     VkSwapchainKHR handle {};
 
-    VkSemaphore imageAvailableSignal {};
+    std::vector <VkSemaphore> imageAvailableSignals {};
 
   } mSwapchain {};
 
@@ -237,10 +237,10 @@ private:
   VkPipelineLayout mPipelineLayout {};
   VkPipeline mGraphicsPipeline {};
   VkCommandPool mCommandPool {};
-  VkCommandBuffer mCommandBuffer {};
+  std::vector <VkCommandBuffer> mCommandBuffers {};
 
-  VkSemaphore mRenderFinishedSignal {};
-  VkFence mFrameIsRendering {};
+  std::vector <VkSemaphore> mRenderFinishedSignals {};
+  std::vector <VkFence> mFrameIsRenderingFences {};
 
 
   struct
@@ -256,6 +256,9 @@ private:
     uint32_t presentation {};
 
   } mQueueIndices {};
+
+  size_t mCurrentFrameIndex {};
+  size_t mMaxConcurrentFrames {2};
 };
 
 void
@@ -443,7 +446,7 @@ VulkanApp::initVulkan()
   createGraphicsPipeline();
   createFramebuffers();
   createCommandPool(suitableDevice);
-  createCommandBuffer();
+  createCommandBuffers();
   createSyncObjects();
 }
 
@@ -469,7 +472,7 @@ VulkanApp::deinit()
 {
   mQueues = {};
   mQueueIndices = {};
-  mCommandBuffer = {};
+  mCommandBuffers = {};
 
   if ( mCommandPool != VK_NULL_HANDLE )
   {
@@ -523,20 +526,23 @@ VulkanApp::deinit()
 
   if ( mDevice != VK_NULL_HANDLE )
   {
-    if ( mSwapchain.imageAvailableSignal != VK_NULL_HANDLE )
-      vkDestroySemaphore(
-        mDevice, mSwapchain.imageAvailableSignal,
-        GlobalAllocator );
+    for ( size_t i {}; i < mMaxConcurrentFrames; ++i )
+    {
+      if ( mSwapchain.imageAvailableSignals[i] != VK_NULL_HANDLE )
+        vkDestroySemaphore(
+          mDevice, mSwapchain.imageAvailableSignals[i],
+          GlobalAllocator );
 
-    if ( mRenderFinishedSignal != VK_NULL_HANDLE )
-      vkDestroySemaphore(
-        mDevice, mRenderFinishedSignal,
-        GlobalAllocator );
+      if ( mRenderFinishedSignals[i] != VK_NULL_HANDLE )
+        vkDestroySemaphore(
+          mDevice, mRenderFinishedSignals[i],
+          GlobalAllocator );
 
-    if ( mFrameIsRendering != VK_NULL_HANDLE )
-      vkDestroyFence(
-        mDevice, mFrameIsRendering,
-        GlobalAllocator );
+      if ( mFrameIsRenderingFences[i] != VK_NULL_HANDLE )
+        vkDestroyFence(
+          mDevice, mFrameIsRenderingFences[i],
+          GlobalAllocator );
+    }
 
     vkDestroyDevice(mDevice, GlobalAllocator);
     mDevice = {};
@@ -1120,18 +1126,21 @@ VulkanApp::createCommandPool(
 }
 
 void
-VulkanApp::createCommandBuffer()
+VulkanApp::createCommandBuffers()
 {
+  mCommandBuffers.resize(mMaxConcurrentFrames);
+
   const VkCommandBufferAllocateInfo cmdBufferAllocateInfo
   {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = mCommandPool,
     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-    .commandBufferCount = 1,
+    .commandBufferCount = static_cast <uint32_t> (mCommandBuffers.size()),
   };
 
   const auto result = vkAllocateCommandBuffers(
-    mDevice, &cmdBufferAllocateInfo, &mCommandBuffer );
+    mDevice, &cmdBufferAllocateInfo,
+    mCommandBuffers.data() );
 
   if ( result != VK_SUCCESS )
   {
@@ -1179,12 +1188,12 @@ VulkanApp::recordCommandBuffer(
   };
 
   vkCmdBeginRenderPass(
-    mCommandBuffer, &renderPassBeginInfo,
+    cmdBuffer, &renderPassBeginInfo,
     VK_SUBPASS_CONTENTS_INLINE );
 
 
   vkCmdBindPipeline(
-    mCommandBuffer,
+    cmdBuffer,
     VK_PIPELINE_BIND_POINT_GRAPHICS,
     mGraphicsPipeline );
 
@@ -1200,7 +1209,7 @@ VulkanApp::recordCommandBuffer(
   };
 
   vkCmdSetViewport(
-    mCommandBuffer,
+    cmdBuffer,
     0, 1, &viewport );
 
 
@@ -1211,20 +1220,20 @@ VulkanApp::recordCommandBuffer(
   };
 
   vkCmdSetScissor(
-    mCommandBuffer,
+    cmdBuffer,
     0, 1, &scissor );
 
 
   vkCmdDraw(
-    mCommandBuffer,
+    cmdBuffer,
     3, 1,
     0, 0 );
 
 
-  vkCmdEndRenderPass(mCommandBuffer);
+  vkCmdEndRenderPass(cmdBuffer);
 
 
-  const auto cmdEndResult = vkEndCommandBuffer(mCommandBuffer);
+  const auto cmdEndResult = vkEndCommandBuffer(cmdBuffer);
 
   if ( cmdEndResult != VK_SUCCESS )
   {
@@ -1236,6 +1245,10 @@ VulkanApp::recordCommandBuffer(
 void
 VulkanApp::createSyncObjects()
 {
+  mSwapchain.imageAvailableSignals.resize(mMaxConcurrentFrames);
+  mRenderFinishedSignals.resize(mMaxConcurrentFrames);
+  mFrameIsRenderingFences.resize(mMaxConcurrentFrames);
+
   const VkSemaphoreCreateInfo semaphoreCreateInfo
   {
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -1247,28 +1260,31 @@ VulkanApp::createSyncObjects()
     .flags = VK_FENCE_CREATE_SIGNALED_BIT,
   };
 
-  const auto semaphore1CreateStatus = vkCreateSemaphore(
-    mDevice, &semaphoreCreateInfo,
-    GlobalAllocator, &mSwapchain.imageAvailableSignal );
-
-  const auto semaphore2CreateStatus = vkCreateSemaphore(
-    mDevice, &semaphoreCreateInfo,
-    GlobalAllocator, &mRenderFinishedSignal );
-
-  const auto fenceCreateStatus = vkCreateFence(
-    mDevice, &fenceCreateInfo,
-    GlobalAllocator, &mFrameIsRendering );
-
-  if ( semaphore1CreateStatus != VK_SUCCESS || semaphore2CreateStatus != VK_SUCCESS )
+  for ( size_t i {}; i < mMaxConcurrentFrames; ++i )
   {
-    deinit();
-    throw std::runtime_error("Vulkan: Failed to create semaphores");
-  }
+    const auto semaphore1CreateStatus = vkCreateSemaphore(
+      mDevice, &semaphoreCreateInfo,
+      GlobalAllocator, &mSwapchain.imageAvailableSignals[i] );
 
-  if ( fenceCreateStatus != VK_SUCCESS )
-  {
-    deinit();
-    throw std::runtime_error("Vulkan: Failed to create fence");
+    const auto semaphore2CreateStatus = vkCreateSemaphore(
+      mDevice, &semaphoreCreateInfo,
+      GlobalAllocator, &mRenderFinishedSignals[i] );
+
+    const auto fenceCreateStatus = vkCreateFence(
+      mDevice, &fenceCreateInfo,
+      GlobalAllocator, &mFrameIsRenderingFences[i] );
+
+    if ( semaphore1CreateStatus != VK_SUCCESS || semaphore2CreateStatus != VK_SUCCESS )
+    {
+      deinit();
+      throw std::runtime_error("Vulkan: Failed to create semaphores");
+    }
+
+    if ( fenceCreateStatus != VK_SUCCESS )
+    {
+      deinit();
+      throw std::runtime_error("Vulkan: Failed to create fence");
+    }
   }
 }
 
@@ -1276,11 +1292,11 @@ void
 VulkanApp::drawFrame()
 {
   vkWaitForFences( mDevice,
-    1, &mFrameIsRendering, VK_TRUE,
+    1, &mFrameIsRenderingFences[mCurrentFrameIndex], VK_TRUE,
     std::numeric_limits <uint64_t>::max() );
 
   vkResetFences( mDevice,
-    1, &mFrameIsRendering );
+    1, &mFrameIsRenderingFences[mCurrentFrameIndex] );
 
 
   uint32_t acquiredImageIndex {};
@@ -1288,16 +1304,16 @@ VulkanApp::drawFrame()
   vkAcquireNextImageKHR(
     mDevice, mSwapchain.handle,
     std::numeric_limits <uint64_t>::max(),
-    mSwapchain.imageAvailableSignal,
+    mSwapchain.imageAvailableSignals[mCurrentFrameIndex],
     VK_NULL_HANDLE,
     &acquiredImageIndex );
 
 
   vkResetCommandBuffer(
-    mCommandBuffer, 0 );
+    mCommandBuffers[mCurrentFrameIndex], 0 );
 
   recordCommandBuffer(
-    mCommandBuffer,
+    mCommandBuffers[mCurrentFrameIndex],
     acquiredImageIndex );
 
 
@@ -1308,12 +1324,12 @@ VulkanApp::drawFrame()
 
   const VkSemaphore waitSemaphores[]
   {
-    mSwapchain.imageAvailableSignal,
+    mSwapchain.imageAvailableSignals[mCurrentFrameIndex],
   };
 
   const VkSemaphore signalSemaphores[]
   {
-    mRenderFinishedSignal,
+    mRenderFinishedSignals[mCurrentFrameIndex],
   };
 
   const VkSubmitInfo submitInfo
@@ -1323,7 +1339,7 @@ VulkanApp::drawFrame()
     .pWaitSemaphores = waitSemaphores,
     .pWaitDstStageMask = waitStages,
     .commandBufferCount = 1,
-    .pCommandBuffers = &mCommandBuffer,
+    .pCommandBuffers = &mCommandBuffers[mCurrentFrameIndex],
     .signalSemaphoreCount = 1,
     .pSignalSemaphores = signalSemaphores,
   };
@@ -1331,7 +1347,7 @@ VulkanApp::drawFrame()
   const auto queueSubmitResult = vkQueueSubmit(
     mQueues.graphics,
     1, &submitInfo,
-    mFrameIsRendering );
+    mFrameIsRenderingFences[mCurrentFrameIndex] );
 
   if ( queueSubmitResult != VK_SUCCESS )
   {
@@ -1359,6 +1375,8 @@ VulkanApp::drawFrame()
   vkQueuePresentKHR(
     mQueues.presentation,
     &presentInfo );
+
+  ++mCurrentFrameIndex %= mMaxConcurrentFrames;
 }
 
 std::vector <QueueFamilyCapabilities>
