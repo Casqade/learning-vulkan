@@ -91,6 +91,9 @@ Allocator::reallocate(
   const size_t alignment,
   const VkSystemAllocationScope scope )
 {
+  assert(data != nullptr);
+  assert(size != 0);
+
   if ( mAllocatedBlocks.count(data) == 0 )
   {
     LOG_ERROR("Allocator: Failed to reallocate unknown memory block {}", data);
@@ -100,6 +103,7 @@ Allocator::reallocate(
 
   const auto& block = mAllocatedBlocks[data];
 
+  assert(alignment == block.alignment);
 
   const auto newData = allocate(
     size, alignment, scope );
@@ -113,7 +117,8 @@ Allocator::reallocate(
   }
 
   std::memcpy(
-    newData, data, block.size );
+    newData, data,
+    std::min(size, block.size) );
 
   deallocate(data);
 
@@ -125,10 +130,7 @@ Allocator::deallocate(
   void* data )
 {
   if ( mAllocatedBlocks.count(data) == 0 )
-  {
-    LOG_ERROR("Allocator: Failed to free unknown memory block {}", data);
     return;
-  }
 
   const auto& block = mAllocatedBlocks[data];
 
@@ -203,9 +205,22 @@ reallocate(
   LOG_TRACE("Vulkan: reallocating {} bytes within {} scope",
     size, AllocationScopeToString(scope) );
 
+  if ( size == 0 )
+  {
+    allocator->deallocate(data);
+    return nullptr;
+  }
 
-  const auto newData = allocator->reallocate(
-    data, size, alignment, scope );
+
+  void* newData {};
+
+  if ( data != nullptr )
+    newData = allocator->reallocate(
+      data, size, alignment, scope );
+  else
+    newData = allocator->allocate(
+      size, alignment, scope );
+
 
   if ( newData == nullptr )
     LOG_ERROR("Vulkan: Failed to reallocate memory block {} to {} bytes with {}-byte alignment",
