@@ -174,6 +174,7 @@ public:
 
 
   void run();
+  void framebufferResized();
 
 
 private:
@@ -186,13 +187,15 @@ private:
 
   void drawFrame();
 
-  void createLogicalDevice( const VkPhysicalDevice );
-  void createSwapChain( const VkPhysicalDevice );
+  void createLogicalDevice();
+  void createSwapChain();
+  void recreateSwapChain();
+  void cleanupSwapChain();
   void createImageViews();
   void createRenderPass();
   void createGraphicsPipeline();
   void createFramebuffers();
-  void createCommandPool( const VkPhysicalDevice );
+  void createCommandPool();
   void createCommandBuffers();
   void createSyncObjects();
 
@@ -216,6 +219,7 @@ private:
   GLFWwindow* mWindow {};
   VkInstance mVkInstance {};
   VkDevice mDevice {};
+  VkPhysicalDevice mPhysicalDevice {};
   VkSurfaceKHR mSurface {};
 
   struct
@@ -259,6 +263,8 @@ private:
 
   size_t mCurrentFrameIndex {};
   size_t mMaxConcurrentFrames {2};
+
+  bool mFramebufferResized {};
 };
 
 void
@@ -276,6 +282,25 @@ VulkanApp::init()
   initVulkan();
 }
 
+static void
+framebufferResizedCallback(
+  GLFWwindow* window,
+  int width, int height )
+{
+  const auto app = static_cast <VulkanApp*> (
+    glfwGetWindowUserPointer(window) );
+
+  assert(app != nullptr);
+
+  app->framebufferResized();
+}
+
+void
+VulkanApp::framebufferResized()
+{
+  mFramebufferResized = true;
+}
+
 void
 VulkanApp::initWindow()
 {
@@ -284,7 +309,7 @@ VulkanApp::initWindow()
 
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
   mWindow = glfwCreateWindow(
     800, 600,
@@ -297,6 +322,12 @@ VulkanApp::initWindow()
     deinit();
     throw std::runtime_error("GLFW: Failed to create window");
   }
+
+
+  glfwSetWindowUserPointer(mWindow, this);
+
+  glfwSetFramebufferSizeCallback(
+    mWindow, framebufferResizedCallback );
 }
 
 void
@@ -415,8 +446,6 @@ VulkanApp::initVulkan()
   }
 
 
-  VkPhysicalDevice suitableDevice = VK_NULL_HANDLE;
-
   const auto devices =
     EnumerateSupportedDevices(mVkInstance);
 
@@ -429,23 +458,23 @@ VulkanApp::initVulkan()
   for ( const auto& device : devices )
     if ( isPhysicalDeviceSuitable(device) == true )
     {
-      suitableDevice = device;
+      mPhysicalDevice = device;
       break;
     }
 
-  if ( suitableDevice == VK_NULL_HANDLE )
+  if ( mPhysicalDevice == VK_NULL_HANDLE )
   {
     deinit();
     throw std::runtime_error("Vulkan: No suitable Vulkan devices available");
   }
 
-  createLogicalDevice(suitableDevice);
-  createSwapChain(suitableDevice);
+  createLogicalDevice();
+  createSwapChain();
   createImageViews();
   createRenderPass();
   createGraphicsPipeline();
   createFramebuffers();
-  createCommandPool(suitableDevice);
+  createCommandPool();
   createCommandBuffers();
   createSyncObjects();
 }
@@ -474,21 +503,7 @@ VulkanApp::deinit()
   mQueueIndices = {};
   mCommandBuffers = {};
 
-  if ( mCommandPool != VK_NULL_HANDLE )
-  {
-    vkDestroyCommandPool(
-      mDevice, mCommandPool, GlobalAllocator );
-
-    mCommandPool = {};
-  }
-
-  for ( auto& framebuffer : mSwapchain.framebuffers )
-  {
-    vkDestroyFramebuffer(
-      mDevice, framebuffer, GlobalAllocator );
-
-    framebuffer = {};
-  }
+  cleanupSwapChain();
 
   if ( mGraphicsPipeline != VK_NULL_HANDLE )
   {
@@ -514,16 +529,6 @@ VulkanApp::deinit()
     mRenderPass = {};
   }
 
-  for ( auto& imageView : mSwapchain.imageViews )
-    vkDestroyImageView(
-      mDevice, imageView, GlobalAllocator );
-
-  if ( mSwapchain.handle != VK_NULL_HANDLE )
-    vkDestroySwapchainKHR(
-      mDevice, mSwapchain.handle, GlobalAllocator );
-
-  mSwapchain = {};
-
   if ( mDevice != VK_NULL_HANDLE )
   {
     for ( size_t i {}; i < mMaxConcurrentFrames; ++i )
@@ -543,22 +548,36 @@ VulkanApp::deinit()
           mDevice, mFrameIsRenderingFences[i],
           GlobalAllocator );
     }
+  }
 
+  mSwapchain = {};
+
+  if ( mCommandPool != VK_NULL_HANDLE )
+  {
+    vkDestroyCommandPool(
+      mDevice, mCommandPool, GlobalAllocator );
+
+    mCommandPool = {};
+  }
+
+  if ( mDevice != VK_NULL_HANDLE )
+  {
     vkDestroyDevice(mDevice, GlobalAllocator);
     mDevice = {};
   }
 
   if ( mVkInstance != VK_NULL_HANDLE )
   {
-    vkDestroySurfaceKHR(
-      mVkInstance, mSurface, GlobalAllocator );
-
     DestroyDebugUtilsMessengerEXT(
       mVkInstance,
       mVkDebugMessenger,
       GlobalAllocator );
 
+    vkDestroySurfaceKHR(
+      mVkInstance, mSurface, GlobalAllocator );
+
     vkDestroyInstance(mVkInstance, GlobalAllocator);
+
     mVkInstance = {};
     mVkDebugMessenger = {};
   }
@@ -570,11 +589,67 @@ VulkanApp::deinit()
 }
 
 void
-VulkanApp::createLogicalDevice(
-  const VkPhysicalDevice physicalDevice )
+VulkanApp::recreateSwapChain()
+{
+  assert(mWindow != nullptr);
+
+  int width {};
+  int height {};
+
+  glfwGetFramebufferSize(
+    mWindow, &width, &height );
+
+  while ( width == 0 || height == 0 )
+  {
+    glfwGetFramebufferSize(
+      mWindow, &width, &height );
+
+    glfwWaitEvents();
+  }
+
+
+  assert(mDevice != VK_NULL_HANDLE);
+
+  vkDeviceWaitIdle(mDevice);
+
+  cleanupSwapChain();
+
+  createSwapChain();
+  createImageViews();
+  createFramebuffers();
+}
+
+void
+VulkanApp::cleanupSwapChain()
+{
+  for ( auto& framebuffer : mSwapchain.framebuffers )
+  {
+    vkDestroyFramebuffer(
+      mDevice, framebuffer, GlobalAllocator );
+
+    framebuffer = {};
+  }
+
+  for ( auto& imageView : mSwapchain.imageViews )
+  {
+    vkDestroyImageView(
+      mDevice, imageView, GlobalAllocator );
+
+    imageView = {};
+  }
+
+  if ( mSwapchain.handle != VK_NULL_HANDLE )
+    vkDestroySwapchainKHR(
+      mDevice, mSwapchain.handle, GlobalAllocator );
+
+  mSwapchain.handle = VK_NULL_HANDLE;
+}
+
+void
+VulkanApp::createLogicalDevice()
 {
   const auto queueFamilyCapabilities =
-    queryQueueFamilyCapabilities(physicalDevice);
+    queryQueueFamilyCapabilities(mPhysicalDevice);
 
   size_t graphicsQueueFamilyIndex {};
   size_t presentationQueueFamilyIndex {};
@@ -626,7 +701,7 @@ VulkanApp::createLogicalDevice(
   };
 
   const auto result = vkCreateDevice(
-    physicalDevice, &deviceCreateInfo,
+    mPhysicalDevice, &deviceCreateInfo,
     GlobalAllocator, &mDevice );
 
   if ( result != VK_SUCCESS )
@@ -650,11 +725,10 @@ VulkanApp::createLogicalDevice(
 }
 
 void
-VulkanApp::createSwapChain(
-  const VkPhysicalDevice device )
+VulkanApp::createSwapChain()
 {
   const auto swapChainSupport =
-    querySwapChainSupport(device);
+    querySwapChainSupport(mPhysicalDevice);
 
   const auto surfaceFormat =
     pickSwapSurfaceFormat(swapChainSupport.formats);
@@ -1092,11 +1166,10 @@ VulkanApp::createFramebuffers()
 }
 
 void
-VulkanApp::createCommandPool(
-  const VkPhysicalDevice physicalDevice )
+VulkanApp::createCommandPool()
 {
   const auto queueFamilyCapabilities =
-    queryQueueFamilyCapabilities(physicalDevice);
+    queryQueueFamilyCapabilities(mPhysicalDevice);
 
   uint32_t graphicsQueueFamilyIndex {};
 
@@ -1295,18 +1368,31 @@ VulkanApp::drawFrame()
     1, &mFrameIsRenderingFences[mCurrentFrameIndex], VK_TRUE,
     std::numeric_limits <uint64_t>::max() );
 
-  vkResetFences( mDevice,
-    1, &mFrameIsRenderingFences[mCurrentFrameIndex] );
-
 
   uint32_t acquiredImageIndex {};
 
-  vkAcquireNextImageKHR(
+  const auto imageAquireResult = vkAcquireNextImageKHR(
     mDevice, mSwapchain.handle,
     std::numeric_limits <uint64_t>::max(),
     mSwapchain.imageAvailableSignals[mCurrentFrameIndex],
     VK_NULL_HANDLE,
     &acquiredImageIndex );
+
+  if ( imageAquireResult == VK_ERROR_OUT_OF_DATE_KHR )
+  {
+    recreateSwapChain();
+    return;
+  }
+
+  if ( imageAquireResult != VK_SUBOPTIMAL_KHR && imageAquireResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to acquire swap chain image");
+  }
+
+
+  vkResetFences( mDevice,
+    1, &mFrameIsRenderingFences[mCurrentFrameIndex] );
 
 
   vkResetCommandBuffer(
@@ -1372,9 +1458,23 @@ VulkanApp::drawFrame()
     .pResults = nullptr,
   };
 
-  vkQueuePresentKHR(
+  const auto queuePresentResult = vkQueuePresentKHR(
     mQueues.presentation,
     &presentInfo );
+
+  if (  queuePresentResult == VK_ERROR_OUT_OF_DATE_KHR ||
+        queuePresentResult == VK_SUBOPTIMAL_KHR ||
+        mFramebufferResized == true )
+  {
+    recreateSwapChain();
+    mFramebufferResized = false;
+  }
+
+  else if (queuePresentResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to present swap chain image");
+  }
 
   ++mCurrentFrameIndex %= mMaxConcurrentFrames;
 }
