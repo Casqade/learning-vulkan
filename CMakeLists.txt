@@ -286,11 +286,15 @@ target_include_directories(${TARGET} PUBLIC
 
 execute_process(
   COMMAND glslc triangle.vert -o triangle_vs.spv
-  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/src/shaders")
+  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/src/shaders"
+  COMMAND_ERROR_IS_FATAL ANY
+)
 
 execute_process(
   COMMAND glslc triangle.frag -o triangle_fs.spv
-  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/src/shaders")
+  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/src/shaders"
+  COMMAND_ERROR_IS_FATAL ANY
+)
 
 install(
   DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src/shaders
