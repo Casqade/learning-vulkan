@@ -1,6 +1,7 @@
 #include "logger.hpp"
 #include "allocator.hpp"
 
+#include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
 
@@ -167,6 +168,67 @@ struct SwapChainSupportDetails
   std::vector <VkPresentModeKHR> presentModes {};
 };
 
+struct Vertex
+{
+  glm::vec3 position {};
+  glm::vec3 color {};
+
+
+  static std::vector <VkVertexInputBindingDescription> BindingDescriptions()
+  {
+    return
+    {
+      {
+        .binding = 0,
+        .stride = sizeof(Vertex::position),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+      },
+      {
+        .binding = 1,
+        .stride = sizeof(Vertex::color),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+      },
+    };
+  }
+
+  static std::vector <VkVertexInputAttributeDescription> AttributeDescriptions()
+  {
+    return
+    {
+      VkVertexInputAttributeDescription
+      {
+        .location = 0,
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = 0,
+      },
+      {
+        .location = 1,
+        .binding = 1,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = 0,
+      },
+    };
+  }
+
+};
+
+const std::vector <glm::vec3> positions
+{
+  {0.f, -1.f, 0.f},
+  {1.f, 1.f, 0.f},
+  {-1.f, 1.f, 0.f},
+};
+
+const std::vector <glm::vec3> colors
+{
+  {1.f, 0.f, 0.f},
+  {0.f, 1.f, 0.f},
+  {0.f, 0.f, 1.f},
+};
+
+
+
 class VulkanApp
 {
 public:
@@ -197,6 +259,7 @@ private:
   void createFramebuffers();
   void createCommandPool();
   void createCommandBuffers();
+  void createVertexBuffer();
   void createSyncObjects();
 
   void recordCommandBuffer( VkCommandBuffer, const uint32_t imageIndex );
@@ -208,6 +271,7 @@ private:
   VkSurfaceFormatKHR pickSwapSurfaceFormat( const std::vector <VkSurfaceFormatKHR>& ) const;
   VkPresentModeKHR pickSwapPresentMode( const std::vector <VkPresentModeKHR>& ) const;
   VkExtent2D pickSwapExtent( const VkSurfaceCapabilitiesKHR& ) const;
+  uint32_t findMemoryType( const uint32_t typeFilter, const VkMemoryPropertyFlags );
 
   VkShaderModule createShaderModule( const std::vector <char>& code ) const;
 
@@ -242,6 +306,9 @@ private:
   VkPipeline mGraphicsPipeline {};
   VkCommandPool mCommandPool {};
   std::vector <VkCommandBuffer> mCommandBuffers {};
+
+  VkBuffer mVertexBuffer {};
+  VkDeviceMemory mVertexBufferMemory{};
 
   std::vector <VkSemaphore> mRenderFinishedSignals {};
   std::vector <VkFence> mFrameIsRenderingFences {};
@@ -475,6 +542,7 @@ VulkanApp::initVulkan()
   createGraphicsPipeline();
   createFramebuffers();
   createCommandPool();
+  createVertexBuffer();
   createCommandBuffers();
   createSyncObjects();
 }
@@ -493,7 +561,6 @@ VulkanApp::initVulkanDebugMessenger(
     deinit();
     throw std::runtime_error("Vulkan: Failed to set up debug messenger");
   }
-
 }
 
 void
@@ -504,6 +571,22 @@ VulkanApp::deinit()
   mCommandBuffers = {};
 
   cleanupSwapChain();
+
+  if ( mVertexBuffer != VK_NULL_HANDLE )
+  {
+    vkDestroyBuffer(
+      mDevice, mVertexBuffer, GlobalAllocator );
+
+    mVertexBuffer = {};
+  }
+
+  if ( mVertexBufferMemory != VK_NULL_HANDLE )
+  {
+    vkFreeMemory(
+      mDevice, mVertexBufferMemory, GlobalAllocator );
+
+    mVertexBufferMemory = {};
+  }
 
   if ( mGraphicsPipeline != VK_NULL_HANDLE )
   {
@@ -970,13 +1053,16 @@ VulkanApp::createGraphicsPipeline()
     },
   };
 
+  const auto bindingDescriptions = Vertex::BindingDescriptions();
+  const auto attributeDescriptions = Vertex::AttributeDescriptions();
+
   const VkPipelineVertexInputStateCreateInfo vertexInputInfo
   {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    .vertexBindingDescriptionCount = 0,
-    .pVertexBindingDescriptions = nullptr,
-    .vertexAttributeDescriptionCount = 0,
-    .pVertexAttributeDescriptions = nullptr,
+    .vertexBindingDescriptionCount = static_cast <uint32_t> (bindingDescriptions.size()),
+    .pVertexBindingDescriptions = bindingDescriptions.data(),
+    .vertexAttributeDescriptionCount = static_cast <uint32_t> (attributeDescriptions.size()),
+    .pVertexAttributeDescriptions = attributeDescriptions.data(),
   };
 
   const VkPipelineInputAssemblyStateCreateInfo inputAssembly
@@ -1271,6 +1357,23 @@ VulkanApp::recordCommandBuffer(
     mGraphicsPipeline );
 
 
+  const VkBuffer vertexBuffers[]
+  {
+    mVertexBuffer,
+    mVertexBuffer,
+  };
+
+  const VkDeviceSize offsets[]
+  {
+    0,
+    sizeof(Vertex::position) * positions.size(),
+  };
+
+  vkCmdBindVertexBuffers(
+    cmdBuffer, 0, 2,
+    vertexBuffers, offsets );
+
+
   const VkViewport viewport
   {
     .x = 0.f,
@@ -1313,6 +1416,124 @@ VulkanApp::recordCommandBuffer(
     deinit();
     throw std::runtime_error("Vulkan: Failed to record command buffer");
   }
+}
+
+uint32_t
+VulkanApp::findMemoryType(
+  uint32_t typeFilter,
+  const VkMemoryPropertyFlags properties )
+{
+  VkPhysicalDeviceMemoryProperties memoryProperties;
+  vkGetPhysicalDeviceMemoryProperties(
+    mPhysicalDevice, &memoryProperties );
+
+  for ( uint32_t i {}; i < memoryProperties.memoryTypeCount; ++i )
+    if (  typeFilter & (1 << i) &&
+          (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties )
+      return i;
+
+  deinit();
+  throw std::runtime_error("Vulkan: Failed to find suitable memory type");
+}
+
+void
+VulkanApp::createVertexBuffer()
+{
+  const auto positionsSize =
+    sizeof(decltype(positions)::value_type) * positions.size();
+
+  const auto colorsSize =
+    sizeof(decltype(colors)::value_type) * colors.size();
+
+  const auto bufferSize =
+    positionsSize +
+    colorsSize;
+
+  const VkBufferCreateInfo bufferCreateInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+    .size = bufferSize,
+    .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+  };
+
+  const auto result = vkCreateBuffer(
+    mDevice, &bufferCreateInfo,
+    GlobalAllocator, &mVertexBuffer );
+
+  if ( result != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to create vertex buffer");
+  }
+
+
+  VkMemoryRequirements memoryRequirements;
+  vkGetBufferMemoryRequirements(
+    mDevice, mVertexBuffer,
+    &memoryRequirements );
+
+  const auto memoryPropertyFlags =
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+  const VkMemoryAllocateInfo allocateInfo
+  {
+    .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    .allocationSize = memoryRequirements.size,
+    .memoryTypeIndex = findMemoryType(
+      memoryRequirements.memoryTypeBits,
+      memoryPropertyFlags ),
+  };
+
+  const auto allocationResult = vkAllocateMemory(
+    mDevice, &allocateInfo,
+    GlobalAllocator,
+    &mVertexBufferMemory );
+
+  if ( allocationResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to allocate vertex buffer memory");
+  }
+
+
+  const auto bufferBindResult = vkBindBufferMemory(
+    mDevice,
+    mVertexBuffer,
+    mVertexBufferMemory,
+    0 );
+
+  if ( bufferBindResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to bind vertex buffer memory");
+  }
+
+
+  void* data;
+
+  const auto mapMemoryResult = vkMapMemory(
+    mDevice, mVertexBufferMemory,
+    0, bufferCreateInfo.size,
+    0, &data );
+
+  if ( mapMemoryResult != VK_SUCCESS )
+  {
+    deinit();
+    throw std::runtime_error("Vulkan: Failed to map vertex buffer memory");
+  }
+
+  std::memcpy(
+    data, positions.data(),
+    positionsSize );
+
+  std::memcpy(
+    static_cast <char*> (data) + positionsSize,
+    colors.data(), colorsSize );
+
+  vkUnmapMemory(
+    mDevice, mVertexBufferMemory );
 }
 
 void
