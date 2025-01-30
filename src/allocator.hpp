@@ -71,31 +71,45 @@ public:
 };
 
 
+VKAPI_ATTR
 void*
+VKAPI_CALL
 allocate(
   void* pAllocator,
   size_t size,
   size_t alignment,
   VkSystemAllocationScope );
 
-void* reallocate(
+VKAPI_ATTR
+void*
+VKAPI_CALL
+reallocate(
   void* pAllocator,
   void* data,
   size_t size,
   size_t alignment,
   VkSystemAllocationScope );
 
-void free(
+VKAPI_ATTR
+void
+VKAPI_CALL
+free(
   void* pAllocator,
   void* data );
 
-void internalAllocate(
+VKAPI_ATTR
+void
+VKAPI_CALL
+internalAllocate(
   void* pAllocator,
   size_t size,
   VkInternalAllocationType,
   VkSystemAllocationScope );
 
-void internalFree(
+VKAPI_ATTR
+void
+VKAPI_CALL
+internalFree(
   void* pAllocator,
   size_t size,
   VkInternalAllocationType,

@@ -64,8 +64,12 @@ Allocator::allocate(
   const size_t alignment,
   const VkSystemAllocationScope scope )
 {
-  const auto data = std::aligned_alloc(
-    alignment, size );
+  const auto data =
+#if defined(_WIN32)
+    _aligned_malloc(size, alignment);
+#else
+    std::aligned_alloc(alignment, size);
+#endif
 
   if ( data == nullptr )
   {
@@ -140,6 +144,12 @@ Allocator::deallocate(
   auto& scopeAllocation = mOccupiedMemory[block.scope];
   scopeAllocation.size -= block.size;
   scopeAllocation.count--;
+
+#if defined(_WIN32)
+    _aligned_free(data);
+#else
+    std::free(data);
+#endif
 
   mAllocatedBlocks.erase(data);
 }
