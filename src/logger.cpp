@@ -96,3 +96,8 @@ createLogger()
   return logger;
 }
 
+void
+destroyLogger()
+{
+  spdlog::shutdown();
+}

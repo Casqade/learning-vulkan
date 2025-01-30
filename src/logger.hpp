@@ -35,3 +35,4 @@
 
 
 std::shared_ptr <spdlog::logger> createLogger();
+void destroyLogger();

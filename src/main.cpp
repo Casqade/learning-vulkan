@@ -1970,19 +1970,23 @@ main(
 
   GlobalAllocator = &AllocatorCallbacks;
 
-  VulkanApp app {};
-
-  try
   {
-    app.run();
-  }
-  catch ( const std::exception& e )
-  {
-    LOG_ERROR("{}", e.what());
-    return EXIT_FAILURE;
+    VulkanApp app {};
+
+    try
+    {
+      app.run();
+    }
+    catch ( const std::exception& e )
+    {
+      LOG_ERROR("{}", e.what());
+      return EXIT_FAILURE;
+    }
+
+    allocator.printMemoryUsage();
   }
 
-  allocator.printMemoryUsage();
+  destroyLogger();
 
   return EXIT_SUCCESS;
 }
