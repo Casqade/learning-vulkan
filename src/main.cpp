@@ -58,7 +58,7 @@ CreateDebugUtilsMessengerEXT(
   static const auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
     instance, "vkCreateDebugUtilsMessengerEXT" );
 
-  if (func != nullptr)
+  if ( func != nullptr )
     return func(
       instance, pCreateInfo,
       pAllocator, pDebugMessenger );
@@ -548,8 +548,8 @@ VulkanApp::initVulkan()
   createGraphicsPipeline();
   createFramebuffers();
   createCommandPool();
-  createVertexBuffer();
   createCommandBuffers();
+  createVertexBuffer();
   createSyncObjects();
 }
 
@@ -657,13 +657,13 @@ VulkanApp::deinit()
 
   if ( mVkInstance != VK_NULL_HANDLE )
   {
+    vkDestroySurfaceKHR(
+      mVkInstance, mSurface, GlobalAllocator );
+
     DestroyDebugUtilsMessengerEXT(
       mVkInstance,
       mVkDebugMessenger,
       GlobalAllocator );
-
-    vkDestroySurfaceKHR(
-      mVkInstance, mSurface, GlobalAllocator );
 
     vkDestroyInstance(mVkInstance, GlobalAllocator);
 
@@ -1832,6 +1832,9 @@ SwapChainSupportDetails
 VulkanApp::querySwapChainSupport(
   const VkPhysicalDevice device ) const
 {
+  SwapChainSupportDetails details {};
+
+
   uint32_t formatCount;
   uint32_t presentModeCount;
 
@@ -1843,15 +1846,8 @@ VulkanApp::querySwapChainSupport(
     device, mSurface,
     &presentModeCount, nullptr );
 
-
-  SwapChainSupportDetails details {};
-
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-    device, mSurface, &details.capabilities );
-
   details.formats.resize(formatCount);
   details.presentModes.resize(presentModeCount);
-
 
   vkGetPhysicalDeviceSurfaceFormatsKHR(
     device, mSurface,
@@ -1860,6 +1856,10 @@ VulkanApp::querySwapChainSupport(
   vkGetPhysicalDeviceSurfacePresentModesKHR(
     device, mSurface,
     &presentModeCount, details.presentModes.data() );
+
+
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+    device, mSurface, &details.capabilities );
 
   return details;
 }
