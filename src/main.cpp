@@ -233,6 +233,7 @@ class VulkanApp
 {
 public:
   VulkanApp() = default;
+  ~VulkanApp();
 
 
   void run();
@@ -333,6 +334,11 @@ private:
 
   bool mFramebufferResized {};
 };
+
+VulkanApp::~VulkanApp()
+{
+  deinit();
+}
 
 void
 VulkanApp::run()
