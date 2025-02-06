@@ -134,6 +134,14 @@ debugCallback(
   return VK_FALSE;
 }
 
+void
+glfwErrorCallback(
+  int errorCode,
+  const char* description )
+{
+  LOG_ERROR("GLFW error {}: {}", errorCode, description);
+}
+
 
 static std::vector <VkPhysicalDevice>
 EnumerateSupportedDevices(
@@ -377,6 +385,9 @@ VulkanApp::framebufferResized()
 void
 VulkanApp::initWindow()
 {
+  glfwSetErrorCallback(glfwErrorCallback);
+
+
   if ( glfwInit() != GLFW_TRUE )
     throw std::runtime_error("Failed to initialize GLFW");
 
