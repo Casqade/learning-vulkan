@@ -1954,7 +1954,7 @@ main(
   int argc,
   char* argv[] )
 {
-  createLogger();
+  createLogger("vulkan_sandbox");
 
   cqdeVk::Allocator allocator {};
 

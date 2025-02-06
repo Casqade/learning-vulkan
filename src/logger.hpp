@@ -34,5 +34,5 @@
   __VA_ARGS__)
 
 
-std::shared_ptr <spdlog::logger> createLogger();
+std::shared_ptr <spdlog::logger> createLogger( const std::string& loggerName );
 void destroyLogger();

@@ -10,13 +10,13 @@
 
 
 std::shared_ptr <spdlog::logger>
-createLogger()
+createLogger(
+  const std::string& loggerName )
 {
   using spdlog::sinks::basic_file_sink_mt;
   using spdlog::sinks::stdout_color_sink_mt;
   using log_level = spdlog::level::level_enum;
 
-  const auto loggerName = "vulkan_sandbox";
 
   struct
     {
@@ -39,8 +39,7 @@ createLogger()
     return logger;
 
 
-  const std::string executableName = "vulkan_sandbox";
-  const auto logFilename = executableName + ".log";
+  const auto logFilename = loggerName + ".log";
 
   std::vector <std::shared_ptr <spdlog::sinks::sink>> sinks {};
 
